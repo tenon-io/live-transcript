@@ -1,0 +1,169 @@
+<html lang="en"><head>
+    <meta charset="utf-8">
+    <style>
+        html {
+            box-sizing: border-box;
+            font-size: 100%;
+            background: #333;
+            font-family: sans-serif;
+            color: #333;
+        }
+
+        video {
+            display: block;
+            max-height: 25em;
+            margin: 0 auto;
+        }
+
+        #transcript {
+            width: 50%;
+            margin: 0 auto;
+            margin-top: 3em;
+            padding: 2em;
+            background-color: white;
+            border: 1px solid black;
+        }
+
+        #transcript * {
+            font-family: 'Verdana';
+            font-size: 1.5em;
+            line-height: 1.5em;
+            margin: 0 .5em;
+
+        }
+
+        #transcript *:first-child {
+            margin-left: 0;
+        }
+
+        #transcript .active {
+            color: green;
+            border-bottom: 2px solid green;
+            font-weight: bold;
+        }
+    </style>
+
+    <script>
+        const getVTT = path => fetch(path).then(response => response.text());
+
+        const parseVTT = vtt => {
+            const lines = vtt
+            .split(/\n/)
+            .filter(_ => _.length > 1)
+            .slice(1);
+
+            const pairs = lines.reduce((prev, next) => {
+                if (!prev.time) {
+                    prev.sets.push({ 'time' : next });
+                } else {
+                    prev.sets[prev.sets.length-1].text = next;
+                }
+                prev.time = !prev.time;
+                return prev;
+            }, {
+                time: false,
+                sets: []
+            }).sets;
+
+            const getTimeParts = time => {
+                const parts = time.split(/\:/);
+                const sec   = parts[1].split('.');
+                return {
+                    minute: parts[0],
+                    second: sec[0],
+                    millisecond: sec[1]
+                };
+            };
+
+            const details = pairs.map(_ => {
+                const time = _.time;
+                const parts = time.split(' ');
+                return {
+                    start : getTimeParts(parts[0]),
+                    end   : getTimeParts(parts[2]),
+                    text  : _.text
+                };
+            });
+
+            const intervals = details.map(_ => {
+                const end =
+                    (parseInt(_.end.minute) * 60000) +
+                    (parseInt(_.end.second) * 1000) +
+                    parseInt(_.end.millisecond);
+
+                const start =
+                    (parseInt(_.start.minute) * 60000) +
+                    (parseInt(_.start.second) * 1000) +
+                    parseInt(_.start.millisecond);
+
+                const duration = end - start;
+
+                return {
+                    end : end,
+                    start: start,
+                    duration: duration,
+                    text: _.text
+                };
+            });
+
+            return intervals;
+        };
+
+        const configureIntervals = intervals => {
+            const target = document.getElementById('transcript');
+            let index = 0;
+            let offset = 0;
+
+            intervals.forEach((interval, i) => {
+                const el = document.createElement('span');
+                el.textContent = interval.text;
+                el.classList.add('interval-' + i);
+                target.appendChild(el);
+            });
+
+            const mark = el => {
+                Array.from(target.querySelectorAll('*')).forEach(e => {
+                    e.classList.remove('active');
+                    el.classList.add('active');
+                });
+            }
+
+            const next = () => {
+                const current = intervals[index];
+                if (current === undefined) return;
+                const el = document.querySelector('.interval-' + index);
+                setTimeout(() => {
+                    index++;
+                    mark(el);
+                    offset = current.start;
+                    next();
+                }, current.start - offset);
+            };
+
+            next();
+        };
+
+        const setupTranscript = () => {
+            const videoEl = document.querySelector('video');
+            const vttPath = videoEl.dataset.track;
+            getVTT(vttPath).then(parseVTT).then(intervals => {
+                videoEl.addEventListener('play', () => {
+                    configureIntervals(intervals);
+                });
+            });
+        };
+
+        document.addEventListener('DOMContentLoaded', setupTranscript);
+    </script>
+</head>
+<body class=" hasGoogleVoiceExt">
+<video src="video.mp4" controls="" data-track="subs.vtt">
+</video>
+
+<div id="transcript">
+</div>
+
+
+
+
+</body></html>
